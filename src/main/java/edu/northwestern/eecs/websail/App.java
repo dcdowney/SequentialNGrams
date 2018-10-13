@@ -103,7 +103,7 @@ public class App
   }
   public static void main( String[] args ) throws Exception
   {
-    encode("e:\\code\\sw2v\\SequentialNGrams\\wiki2_vocab.txt", "e:\\code\\sw2v\\SequentialNGrams\\3-grams",
-            3, 25);
+    encode(args[0], args[1], Integer.parseInt(args[2]),
+            Integer.parseInt(args[3]));
   }
 }
