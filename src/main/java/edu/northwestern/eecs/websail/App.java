@@ -11,6 +11,7 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -19,6 +20,7 @@ public class App
 {
 
   public static int RADIX = 4;
+  public static final boolean USELOG2 = false;
 
   public static int getID(TIntMap<String> dict, String word) {
     if(!dict.containsKey(word))
@@ -41,26 +43,64 @@ public class App
     return dict;
   }
 
-//all counts must be strictly above mincount
-  public static void encode(String vocabFile, String inFile, int gramsize, int mincount) throws Exception {
-
+  static TreeSet<String> readLinesToTreeSet(String inFile) throws Exception {
     BufferedReader brIn = new BufferedReader(new FileReader(inFile));
+    TreeSet<String> lines = new TreeSet<String>();
+    String sLine;
+    while((sLine = brIn.readLine())!= null) {
+      lines.add(sLine);
+    }
+    brIn.close();
+    return lines;
+  }
+
+  static String getKey(String [] fields, int gramsize) {
+    String key = "";
+    for(int i=0; i<gramsize-1; i++) {
+      key += fields[i] + "_!_";
+    }
+    return key;
+  }
+
+  static HashMap<String, Integer> getSubGrams(TreeSet<String> lines, int gramsize) {
+    HashMap<String, Integer> out = new HashMap<>();
+    for (String s : lines) {
+      String[] fields = s.split(" |\t");
+      if (fields.length != gramsize)
+        continue;
+
+      out.put(getKey(fields, gramsize), Integer.parseInt(fields[gramsize-1]));
+    }
+    return out;
+  }
+
+  //prepares counts for output
+  public static int countProcess(int in) {
+    if(!USELOG2)
+      return in;
+    else
+      return 31 - Integer.numberOfLeadingZeros(in);
+  }
+
+//all counts must be strictly above mincount
+  //inFile contains the n-gram counts to be compressed
+  //inFileSubGrams contains the (n-1)-gram counts to be compressed
+  public static void encode(String vocabFile, String inFile, String inFileSubGrams, int gramsize, int mincount) throws Exception {
+
         TIntMap<String> dict = buildDict(vocabFile);
     String sLine;
     int [] curLine = new int[gramsize];
     int [] prevLine = new int[gramsize];
 
+    TreeSet<String> smallLines = readLinesToTreeSet(inFileSubGrams);
+    HashMap<String, Integer> subGrams = getSubGrams(smallLines, gramsize);
     LongArray out=new LongArray(100L);
     BitList bl = new BitList();
     bl.addShort((short)gramsize);
     bl.addShort((short)mincount);
     int count = 0;
     int countPartialGrams = 0;
-    TreeSet<String> lines = new TreeSet<String>();
-    while((sLine = brIn.readLine())!= null) {
-      lines.add(sLine);
-    }
-    brIn.close();
+    TreeSet<String> lines = readLinesToTreeSet(inFile);
     for(String s : lines) {
       String [] fields = s.split(" |\t");
       if(fields.length != gramsize+1)
@@ -77,7 +117,13 @@ public class App
       }
       if(newSubgramIdx >= 0) {
         int sizeAtStart = bl.size();
+        String key = getKey(fields, gramsize);
+        if(!subGrams.containsKey(key))
+          System.err.println("error, bigram not found!!  Do not trust results.");
+        int subgramCount = subGrams.get(key);
+
         bl.addAll(CompressionUtils.variableCompress(0, RADIX));
+        bl.addAll(CompressionUtils.variableCompress(countProcess(subgramCount-mincount), RADIX));
         bl.addAll(CompressionUtils.variableCompress(newSubgramIdx, RADIX));
         bl.addAll(CompressionUtils.variableCompress(curLine[newSubgramIdx]-prevLine[newSubgramIdx], RADIX));
         for(int i=newSubgramIdx+1; i<curLine.length - 1; i++) {
@@ -91,7 +137,7 @@ public class App
         if(curLine[gramsize-1]-prevLine[gramsize-1] < 0)
           System.out.println("problems.");
       }
-      bl.addAll(CompressionUtils.variableCompress(Integer.parseInt(fields[gramsize])-mincount, RADIX));
+      bl.addAll(CompressionUtils.variableCompress(countProcess(Integer.parseInt(fields[gramsize])-mincount), RADIX));
 
       for(int i=0; i<curLine.length; i++) {
         prevLine[i] = curLine[i];
@@ -103,7 +149,7 @@ public class App
   }
   public static void main( String[] args ) throws Exception
   {
-    encode(args[0], args[1], Integer.parseInt(args[2]),
-            Integer.parseInt(args[3]));
+    encode(args[0], args[1], args[2], Integer.parseInt(args[3]),
+            Integer.parseInt(args[4]));
   }
 }
